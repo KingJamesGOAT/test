@@ -11,12 +11,13 @@ import {
   ZoomOut,
   Maximize2,
   CalendarArrowUp,
-  ArrowRight
+  ArrowRight,
+  BookOpen 
 } from 'lucide-react';
 import { useLanguage } from '../lib/i18n/LanguageContext';
 
-// Import data AND UI Translations
-import { COUNCILS, SAINTS, POPES, TimelineEvent, TIMELINE_UI } from '../lib/data/timelineData'; 
+// Import data
+import { COUNCILS, SAINTS, POPES, WRITINGS, TimelineEvent, TIMELINE_UI } from '../lib/data/timelineData'; 
 import { cn } from './ui/utils'; 
 
 // --- CONFIGURATION ---
@@ -28,7 +29,7 @@ const EVENT_GAP = 12;
 export default function HistoryTimeline() {
   const { language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedType, setSelectedType] = useState<'all' | 'council' | 'saint' | 'pope'>('all');
+  const [selectedType, setSelectedType] = useState<'all' | 'council' | 'saint' | 'pope' | 'writing'>('all');
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
   
   // Controls state
@@ -40,11 +41,12 @@ export default function HistoryTimeline() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const miniMapRef = useRef<HTMLDivElement>(null);
   
-  // Dragging Refs
-  const isDraggingMiniMap = useRef(false);
+  // DRAG STATE (POINTER EVENTS)
   const isDraggingMain = useRef(false);
-  const dragStartX = useRef(0);
-  const dragStartScroll = useRef(0);
+  const startXMain = useRef(0);
+  const startScrollMain = useRef(0);
+
+  const isDraggingMiniMap = useRef(false);
 
   // --- 1. ZOOM LIMITS ---
   const minZoom = useMemo(() => {
@@ -83,79 +85,70 @@ export default function HistoryTimeline() {
     }
   };
 
-  const handleSeek = (clientX: number) => {
-    if (!miniMapRef.current || !scrollContainerRef.current) return;
-
-    const rect = miniMapRef.current.getBoundingClientRect();
-    const clickX = clientX - rect.left;
-    
-    let percentage = clickX / rect.width;
-    percentage = Math.max(0, Math.min(1, percentage));
-
+  const jumpToPercentage = (percentage: number) => {
+    if (!scrollContainerRef.current) return;
     const maxScroll = scrollContainerRef.current.scrollWidth - containerWidth;
-    const newScrollLeft = percentage * maxScroll;
-
+    const newScrollLeft = Math.max(0, Math.min(maxScroll, percentage * maxScroll));
     scrollContainerRef.current.scrollLeft = newScrollLeft;
   };
 
-  const handleMiniMapDown = (e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault(); 
-    e.stopPropagation();
-    isDraggingMiniMap.current = true;
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    handleSeek(clientX);
-  };
-
-  // --- 3. MAIN TIMELINE DRAG LOGIC ---
-  const handleMainMouseDown = (e: React.MouseEvent) => {
-    // If clicking a card, don't start scroll drag
+  // --- 3. POINTER EVENT HANDLERS ---
+  
+  const handleMainPointerDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('.event-card')) return;
-    
-    e.preventDefault(); 
-    
+
+    e.preventDefault();
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
     isDraggingMain.current = true;
-    dragStartX.current = e.clientX;
-    if (scrollContainerRef.current) {
-      dragStartScroll.current = scrollContainerRef.current.scrollLeft;
-    }
+    startXMain.current = e.clientX;
+    startScrollMain.current = container.scrollLeft;
     
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
     document.body.style.cursor = 'grabbing';
   };
 
-  useEffect(() => {
-    const handleWindowMove = (e: MouseEvent | TouchEvent) => {
-      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+  const handleMainPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingMain.current || !scrollContainerRef.current) return;
+    
+    e.preventDefault();
+    const delta = e.clientX - startXMain.current;
+    scrollContainerRef.current.scrollLeft = startScrollMain.current - delta;
+  };
 
-      if (isDraggingMiniMap.current) {
-        e.preventDefault(); 
-        handleSeek(clientX);
-      }
-
-      if (isDraggingMain.current && scrollContainerRef.current) {
-        e.preventDefault();
-        const delta = clientX - dragStartX.current;
-        scrollContainerRef.current.scrollLeft = dragStartScroll.current - delta;
-      }
-    };
-
-    const handleWindowUp = () => {
-      isDraggingMiniMap.current = false;
+  const handleMainPointerUp = (e: React.PointerEvent) => {
+    if (isDraggingMain.current) {
       isDraggingMain.current = false;
-      document.body.style.cursor = ''; 
-    };
+      document.body.style.cursor = '';
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  };
 
-    window.addEventListener('mousemove', handleWindowMove);
-    window.addEventListener('mouseup', handleWindowUp);
-    window.addEventListener('touchmove', handleWindowMove, { passive: false });
-    window.addEventListener('touchend', handleWindowUp);
+  const handleMiniMapPointerDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    isDraggingMiniMap.current = true;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    
+    if (miniMapRef.current) {
+      const rect = miniMapRef.current.getBoundingClientRect();
+      const pct = (e.clientX - rect.left) / rect.width;
+      jumpToPercentage(pct);
+    }
+  };
 
-    return () => {
-      window.removeEventListener('mousemove', handleWindowMove);
-      window.removeEventListener('mouseup', handleWindowUp);
-      window.removeEventListener('touchmove', handleWindowMove);
-      window.removeEventListener('touchend', handleWindowUp);
-    };
-  }, [containerWidth, totalContentWidth]);
+  const handleMiniMapPointerMove = (e: React.PointerEvent) => {
+    if (!isDraggingMiniMap.current || !miniMapRef.current) return;
+    e.preventDefault();
+    const rect = miniMapRef.current.getBoundingClientRect();
+    const pct = (e.clientX - rect.left) / rect.width;
+    jumpToPercentage(pct);
+  };
+
+  const handleMiniMapPointerUp = (e: React.PointerEvent) => {
+    isDraggingMiniMap.current = false;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  };
 
 
   // --- 4. NAVIGATION HANDLERS ---
@@ -194,11 +187,13 @@ export default function HistoryTimeline() {
     const councils = COUNCILS || [];
     const saints = SAINTS || [];
     const popes = POPES || [];
+    const writings = WRITINGS || []; 
 
     const all = [
       ...councils.map(e => ({ ...e, type: 'council' as const })),
       ...saints.map(e => ({ ...e, type: 'saint' as const })),
-      ...popes.map(e => ({ ...e, type: 'pope' as const }))
+      ...popes.map(e => ({ ...e, type: 'pope' as const })),
+      ...writings.map(e => ({ ...e, type: 'writing' as const })) 
     ];
     
     return all.filter(event => {
@@ -218,7 +213,6 @@ export default function HistoryTimeline() {
     const lanes: number[] = []; 
     
     const positioned = filteredEvents.map(event => {
-      // Ensure startYear exists
       if (event.startYear === undefined) return null;
 
       const startPixel = (event.startYear - DATA_START_YEAR) * pixelsPerYear;
@@ -264,6 +258,10 @@ export default function HistoryTimeline() {
       case 'pope': return { 
         bg: 'bg-red-600', border: 'border-red-400', text: 'text-white', hover: 'hover:bg-red-500' 
       };
+      // CHANGED: "emerald" -> "green"
+      case 'writing': return { 
+        bg: 'bg-green-600', border: 'border-green-400', text: 'text-white', hover: 'hover:bg-green-500' 
+      };
       default: return { 
         bg: 'bg-gray-700', border: 'border-gray-500', text: 'text-white', hover: 'hover:bg-gray-600' 
       };
@@ -275,11 +273,13 @@ export default function HistoryTimeline() {
       case 'council': return <ScrollText size={16} className="text-indigo-100" />;
       case 'saint': return <User size={16} className="text-amber-100" />;
       case 'pope': return <Crown size={16} className="text-red-100" />;
+      // CHANGED: "text-emerald-100" -> "text-green-100"
+      case 'writing': return <BookOpen size={16} className="text-green-100" />;
       default: return <HistoryIcon size={16} />;
     }
   };
 
-  // --- 8. RENDER HELPERS ---
+  // --- 8. RENDER ---
   const containerStyleHeight = Math.max(totalLanes * (LANE_HEIGHT + EVENT_GAP) + 150, 500);
   const tickInterval = pixelsPerYear < 2 ? 100 : pixelsPerYear < 5 ? 50 : pixelsPerYear < 10 ? 25 : 10;
   const ticks = [];
@@ -290,7 +290,6 @@ export default function HistoryTimeline() {
   return (
     <div className="w-full min-h-screen bg-[#050505] text-white pt-24 px-4 pb-12 flex flex-col gap-6">
       
-      {/* SCROLLBAR STYLE */}
       <style>{`
         .timeline-scrollbar::-webkit-scrollbar { height: 14px; background: #0a0a0a; }
         .timeline-scrollbar::-webkit-scrollbar-thumb { background-color: #3b82f6; border-radius: 7px; border: 3px solid #0a0a0a; }
@@ -309,13 +308,13 @@ export default function HistoryTimeline() {
         </p>
       </div>
 
-      {/* 2. CONTROLS CONTAINER */}
+      {/* 2. CONTROLS */}
       <div className="container mx-auto w-full max-w-7xl bg-[#121212] border border-gray-800 p-4 rounded-xl shadow-lg">
         <div className="flex flex-col lg:flex-row gap-4 justify-between items-center">
           
           {/* Filters */}
           <div className="flex flex-wrap justify-center gap-2">
-             {(['all', 'council', 'saint', 'pope'] as const).map(type => (
+             {(['all', 'council', 'saint', 'pope', 'writing'] as const).map(type => (
                <button
                 key={type}
                 onClick={() => setSelectedType(type)}
@@ -325,7 +324,9 @@ export default function HistoryTimeline() {
                     ? type === 'all' ? "bg-blue-600 border-blue-500 text-white shadow-lg" 
                     : type === 'council' ? "bg-indigo-600 border-indigo-500 text-white shadow-lg"
                     : type === 'saint' ? "bg-amber-600 border-amber-500 text-white shadow-lg"
-                    : "bg-red-600 border-red-500 text-white shadow-lg"
+                    : type === 'pope' ? "bg-red-600 border-red-500 text-white shadow-lg"
+                    // CHANGED: "emerald" -> "green"
+                    : "bg-green-600 border-green-500 text-white shadow-lg"
                     : "bg-[#1a1a1a] border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800"
                 )}
                >
@@ -334,9 +335,10 @@ export default function HistoryTimeline() {
              ))}
           </div>
 
-          {/* Navigation Tools */}
+          {/* Nav Tools */}
           <div className="flex flex-col md:flex-row items-center gap-3 w-full lg:w-auto">
             
+            {/* Go to Year */}
             <div className="flex items-center bg-[#0a0a0a] rounded-lg border border-gray-700 px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all w-full md:w-auto">
               <CalendarArrowUp size={16} className="text-gray-500 shrink-0 mr-2" />
               <input 
@@ -355,6 +357,7 @@ export default function HistoryTimeline() {
               </button>
             </div>
 
+            {/* Search */}
             <div className="flex items-center bg-[#0a0a0a] rounded-lg border border-gray-700 px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all flex-1 min-w-[200px]">
               <Search size={16} className="text-gray-500 shrink-0 mr-2" />
               <input 
@@ -371,6 +374,7 @@ export default function HistoryTimeline() {
               )}
             </div>
 
+            {/* Zoom */}
             <div className="flex items-center gap-1 bg-[#0a0a0a] rounded-lg p-1 border border-gray-700 shrink-0">
               <button onClick={() => handleZoom('out')} disabled={pixelsPerYear <= minZoom} className="p-2 hover:bg-gray-800 disabled:opacity-30 rounded text-gray-300 transition-colors"><ZoomOut size={18}/></button>
               <button onClick={() => handleZoom('reset')} className="p-2 hover:bg-gray-800 rounded text-gray-300 transition-colors"><Maximize2 size={18}/></button>
@@ -380,13 +384,15 @@ export default function HistoryTimeline() {
         </div>
       </div>
 
-      {/* 3. MINI-MAP (SCROLL BAR) */}
+      {/* 3. MINI-MAP */}
       <div className="container mx-auto w-full max-w-[98%] lg:max-w-7xl select-none">
         <div 
           className="w-full h-8 bg-[#121212] rounded-lg border border-gray-700 relative overflow-hidden cursor-pointer touch-none hover:border-blue-500/50 transition-colors"
           ref={miniMapRef}
-          onMouseDown={handleMiniMapDown}
-          onTouchStart={handleMiniMapDown}
+          onPointerDown={handleMiniMapPointerDown}
+          onPointerMove={handleMiniMapPointerMove}
+          onPointerUp={handleMiniMapPointerUp}
+          onPointerLeave={handleMiniMapPointerUp}
         >
           <div className="absolute inset-0 flex items-center justify-between px-3 pointer-events-none z-0">
              <span className="text-[10px] text-gray-500 font-mono font-bold">0 AD</span>
@@ -394,7 +400,7 @@ export default function HistoryTimeline() {
           </div>
 
           <div 
-            className="absolute top-0 bottom-0 bg-blue-600 border-x border-white/20 z-10 cursor-grab active:cursor-grabbing hover:bg-blue-500 transition-colors rounded-sm shadow-lg"
+            className="absolute top-0 bottom-0 bg-blue-600 border-x border-white/20 z-10 cursor-grab active:cursor-grabbing hover:bg-blue-500 transition-colors rounded-sm shadow-lg pointer-events-none"
             style={{
               left: `${thumbLeftPercent}%`,
               width: `${thumbWidthPercent}%`
@@ -408,19 +414,21 @@ export default function HistoryTimeline() {
         <div className="relative w-full h-full flex-1 border border-gray-700 rounded-xl bg-[#080808] shadow-2xl overflow-hidden flex flex-col select-none">
           
           <div 
-            className="flex-1 w-full overflow-x-auto overflow-y-hidden relative timeline-scrollbar"
+            className="flex-1 w-full overflow-x-auto overflow-y-hidden relative timeline-scrollbar cursor-grab active:cursor-grabbing"
             ref={scrollContainerRef}
             onScroll={handleMainScroll}
-            style={{ scrollBehavior: 'auto' }} 
+            style={{ 
+              scrollBehavior: 'auto',
+              touchAction: 'pan-y' 
+            }} 
           >
-            {/* CRITICAL FIX: 
-               onMouseDown is applied HERE (inner div), not on the scroll container.
-               This allows the scrollbar (on parent) to be clicked without being blocked by preventDefault().
-            */}
             <div 
-              className="relative cursor-grab active:cursor-grabbing"
+              className="relative"
               style={{ width: `${totalContentWidth}px`, height: '100%', minHeight: `${containerStyleHeight}px` }}
-              onMouseDown={handleMainMouseDown}
+              onPointerDown={handleMainPointerDown}
+              onPointerMove={handleMainPointerMove}
+              onPointerUp={handleMainPointerUp}
+              onPointerLeave={handleMainPointerUp}
             >
               {/* Grid Background */}
               <div className="absolute inset-0 pointer-events-none opacity-20" 
@@ -500,7 +508,7 @@ export default function HistoryTimeline() {
         </div>
       </div>
 
-      {/* DETAIL MODAL - UPDATED SIZE & CLOSE BUTTON */}
+      {/* DETAIL MODAL */}
       <AnimatePresence>
         {selectedEvent && (
           <motion.div

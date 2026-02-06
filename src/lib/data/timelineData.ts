@@ -6,13 +6,14 @@ export interface LocalizedString {
 }
 
 export interface TimelineEvent {
-  id: string; // Unique ID for keying
+  id: string;
   startYear: number;
-  endYear?: number; // Optional: If missing, it's a "point" event
+  endYear?: number;
   name: LocalizedString;
   description: LocalizedString;
   details?: LocalizedString;
-  type: 'council' | 'saint' | 'pope';
+  // ADDED 'writing' to the type definition
+  type: 'council' | 'saint' | 'pope' | 'writing';
 }
 
 // --- UI TRANSLATIONS ---
@@ -40,10 +41,12 @@ export const TIMELINE_UI = {
     council: { en: "Councils", fr: "Conciles", es: "Concilios", de: "Konzile" },
     saint: { en: "Saints", fr: "Saints", es: "Santos", de: "Heilige" },
     pope: { en: "Popes", fr: "Papes", es: "Papas", de: "Päpste" },
+    // ADDED WRITINGS TRANSLATION
+    writing: { en: "Writings", fr: "Écrits", es: "Escritos", de: "Schriften" },
   }
 };
 
-// --- 1. THE 21 ECUMENICAL COUNCILS ---
+// --- 1. COUNCILS ---
 export const COUNCILS: TimelineEvent[] = [
   { id: 'c1', startYear: 325, endYear: 325, type: 'council', name: { en: "First Council of Nicaea", fr: "Nicée I", es: "Nicea I", de: "Nicäa I" }, description: { en: "Defined the divinity of Christ (Homoousios).", fr: "Divinité du Christ.", es: "Divinidad de Cristo.", de: "Gottheit Christi." } },
   { id: 'c2', startYear: 381, endYear: 381, type: 'council', name: { en: "First Council of Constantinople", fr: "Constantinople I", es: "Constantinopla I", de: "Konstantinopel I" }, description: { en: "Defined divinity of Holy Spirit.", fr: "Divinité du Saint-Esprit.", es: "Divinidad del Espíritu Santo.", de: "Gottheit des Heiligen Geistes." } },
@@ -68,7 +71,7 @@ export const COUNCILS: TimelineEvent[] = [
   { id: 'c21', startYear: 1962, endYear: 1965, type: 'council', name: { en: "Second Vatican Council", fr: "Vatican II", es: "Vaticano II", de: "Vaticanum II" }, description: { en: "Modern world, Liturgy.", fr: "Monde moderne, Liturgie.", es: "Mundo moderno, Liturgia.", de: "Moderne Welt, Liturgie." } }
 ];
 
-// --- 2. SAINTS (Updated with lifespan dates) ---
+// --- 2. SAINTS ---
 export const SAINTS: TimelineEvent[] = [
   { id: 's1', startYear: 5, endYear: 67, type: 'saint', name: { en: "St. Paul", fr: "Saint Paul", es: "San Pablo", de: "Hl. Paulus" }, description: { en: "Apostle to the Gentiles.", fr: "Apôtre des Gentils.", es: "Apóstol de los gentiles.", de: "Apostel der Heiden." } },
   { id: 's2', startYear: 354, endYear: 430, type: 'saint', name: { en: "St. Augustine", fr: "Saint Augustin", es: "San Agustín", de: "Hl. Augustinus" }, description: { en: "Doctor of Grace.", fr: "Docteur de la Grâce.", es: "Doctor de la Gracia.", de: "Lehrer der Gnade." } },
@@ -78,11 +81,20 @@ export const SAINTS: TimelineEvent[] = [
   { id: 's6', startYear: 1887, endYear: 1968, type: 'saint', name: { en: "St. Padre Pio", fr: "Padre Pio", es: "Padre Pío", de: "Pater Pio" }, description: { en: "Stigmatist.", fr: "Stigmatisé.", es: "Estigmatizado.", de: "Stigmatisierter." } }
 ];
 
-// --- 3. POPES (Reign dates) ---
+// --- 3. POPES ---
 export const POPES: TimelineEvent[] = [
   { id: 'p1', startYear: 30, endYear: 64, type: 'pope', name: { en: "St. Peter", fr: "Saint Pierre", es: "San Pedro", de: "Hl. Petrus" }, description: { en: "First Pope.", fr: "Premier Pape.", es: "Primer Papa.", de: "Erster Papst." } },
   { id: 'p2', startYear: 440, endYear: 461, type: 'pope', name: { en: "Leo the Great", fr: "Léon le Grand", es: "León Magno", de: "Leo der Große" }, description: { en: "Defied Attila.", fr: "Défia Attila.", es: "Desafió a Atila.", de: "Trotzte Attila." } },
   { id: 'p3', startYear: 590, endYear: 604, type: 'pope', name: { en: "Gregory the Great", fr: "Grégoire le Grand", es: "Gregorio Magno", de: "Gregor der Große" }, description: { en: "Gregorian Chant.", fr: "Chant grégorien.", es: "Canto gregoriano.", de: "Gregorianischer Choral." } },
   { id: 'p4', startYear: 1978, endYear: 2005, type: 'pope', name: { en: "John Paul II", fr: "Jean-Paul II", es: "Juan Pablo II", de: "Johannes Paul II." }, description: { en: "Totus Tuus.", fr: "Totus Tuus.", es: "Totus Tuus.", de: "Totus Tuus." } },
   { id: 'p5', startYear: 2005, endYear: 2013, type: 'pope', name: { en: "Benedict XVI", fr: "Benoît XVI", es: "Benedicto XVI", de: "Benedikt XVI." }, description: { en: "Resigned.", fr: "A démissionné.", es: "Renunció.", de: "Zurückgetreten." } }
+];
+
+// --- 4. WRITINGS (NEW) ---
+export const WRITINGS: TimelineEvent[] = [
+  { id: 'w1', startYear: 70, endYear: 100, type: 'writing', name: { en: "The Didache", fr: "La Didachè", es: "La Didaché", de: "Die Didache" }, description: { en: "Teaching of the Twelve Apostles.", fr: "Enseignement des Douze Apôtres.", es: "Enseñanza de los Doce Apóstoles.", de: "Lehre der Zwölf Apostel." } },
+  { id: 'w2', startYear: 413, endYear: 426, type: 'writing', name: { en: "City of God", fr: "La Cité de Dieu", es: "La Ciudad de Dios", de: "Der Gottesstaat" }, description: { en: "St. Augustine's masterpiece.", fr: "Chef-d'œuvre de Saint Augustin.", es: "Obra maestra de San Agustín.", de: "Hauptwerk von Hl. Augustinus." } },
+  { id: 'w3', startYear: 1265, endYear: 1274, type: 'writing', name: { en: "Summa Theologica", fr: "Somme Théologique", es: "Suma Teológica", de: "Summa Theologica" }, description: { en: "Aquinas' compendium of theology.", fr: "Compendium de théologie de Thomas d'Aquin.", es: "Compendio de teología de Aquino.", de: "Theologisches Kompendium von Thomas von Aquin." } },
+  { id: 'w4', startYear: 1609, endYear: 1609, type: 'writing', name: { en: "Introduction to the Devout Life", fr: "Introduction à la vie dévote", es: "Introducción a la vida devota", de: "Anleitung zum frommen Leben" }, description: { en: "St. Francis de Sales.", fr: "Saint François de Sales.", es: "San Francisco de Sales.", de: "Hl. Franz von Sales." } },
+  { id: 'w5', startYear: 1992, endYear: 1992, type: 'writing', name: { en: "Catechism of the Catholic Church", fr: "Catéchisme de l'Église catholique", es: "Catecismo de la Iglesia Católica", de: "Katechismus der Katholischen Kirche" }, description: { en: "Promulgated by Pope John Paul II.", fr: "Promulgué par le pape Jean-Paul II.", es: "Promulgado por el Papa Juan Pablo II.", de: "Promulgiert von Papst Johannes Paul II." } }
 ];
