@@ -1,282 +1,545 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Calendar, 
   Search, 
   X, 
-  History as HistoryIcon, // <--- Renommé pour éviter le conflit !
+  History as HistoryIcon, 
   User, 
   ScrollText, 
   Crown,
-  ChevronRight,
-  Filter
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  CalendarArrowUp,
+  ArrowRight
 } from 'lucide-react';
 import { useLanguage } from '../lib/i18n/LanguageContext';
-import { translations } from '../lib/i18n/translations';
-import { COUNCILS, SAINTS, POPES, TimelineEvent, LocalizedString } from '../lib/data/timelineData';
 
-export default function HistoryTimeline() { // Le composant s'appelle HistoryTimeline
+// Import data AND UI Translations
+import { COUNCILS, SAINTS, POPES, TimelineEvent, TIMELINE_UI } from '../lib/data/timelineData'; 
+import { cn } from './ui/utils'; 
+
+// --- CONFIGURATION ---
+const DATA_START_YEAR = 0;
+const DATA_END_YEAR = 2100;
+const LANE_HEIGHT = 90; 
+const EVENT_GAP = 12;   
+
+export default function HistoryTimeline() {
   const { language } = useLanguage();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState<'all' | 'council' | 'saint' | 'pope'>('all');
   const [selectedEvent, setSelectedEvent] = useState<TimelineEvent | null>(null);
+  
+  // Controls state
+  const [pixelsPerYear, setPixelsPerYear] = useState(2); 
+  const [targetYear, setTargetYear] = useState('');
+  const [containerWidth, setContainerWidth] = useState(1000); 
+  const [scrollLeft, setScrollLeft] = useState(0); 
 
-  // Fusionner et trier toutes les données
-  const allEvents = useMemo(() => {
-    const events: (TimelineEvent & { type: 'council' | 'saint' | 'pope' })[] = [
-      ...COUNCILS.map(e => ({ ...e, type: 'council' as const })),
-      ...SAINTS.map(e => ({ ...e, type: 'saint' as const })),
-      ...POPES.map(e => ({ ...e, type: 'pope' as const }))
-    ];
-    return events.sort((a, b) => a.year - b.year);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const miniMapRef = useRef<HTMLDivElement>(null);
+  
+  // Dragging Refs
+  const isDraggingMiniMap = useRef(false);
+  const isDraggingMain = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartScroll = useRef(0);
+
+  // --- 1. ZOOM LIMITS ---
+  const minZoom = useMemo(() => {
+    return containerWidth / (DATA_END_YEAR - DATA_START_YEAR);
+  }, [containerWidth]);
+
+  const maxZoom = useMemo(() => {
+    return containerWidth / 100; 
+  }, [containerWidth]);
+
+  useEffect(() => {
+    if (pixelsPerYear < minZoom) setPixelsPerYear(minZoom);
+    if (pixelsPerYear > maxZoom) setPixelsPerYear(maxZoom);
+  }, [minZoom, maxZoom, pixelsPerYear]);
+
+  useEffect(() => {
+    const updateWidth = () => {
+      if (scrollContainerRef.current) {
+        setContainerWidth(scrollContainerRef.current.clientWidth);
+      }
+    };
+    updateWidth();
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
   }, []);
 
-  // Filtrer les données
-  const filteredEvents = useMemo(() => {
-    return allEvents.filter(event => {
-      // Filtre par type
-      if (selectedType !== 'all' && event.type !== selectedType) return false;
+  // --- 2. MINI-MAP LOGIC ---
+  const totalContentWidth = (DATA_END_YEAR - DATA_START_YEAR) * pixelsPerYear;
+  const safeTotalWidth = totalContentWidth || 1; 
+  const thumbWidthPercent = Math.min(100, (containerWidth / safeTotalWidth) * 100);
+  const thumbLeftPercent = (scrollLeft / safeTotalWidth) * 100;
 
-      // Filtre par recherche
-      const searchLower = searchQuery.toLowerCase();
-      const name = event.name[language].toLowerCase();
-      const description = event.description ? event.description[language].toLowerCase() : '';
-      const year = event.year.toString();
+  const handleMainScroll = () => {
+    if (scrollContainerRef.current) {
+      setScrollLeft(scrollContainerRef.current.scrollLeft);
+    }
+  };
 
-      return name.includes(searchLower) || 
-             description.includes(searchLower) || 
-             year.includes(searchLower);
+  const handleSeek = (clientX: number) => {
+    if (!miniMapRef.current || !scrollContainerRef.current) return;
+
+    const rect = miniMapRef.current.getBoundingClientRect();
+    const clickX = clientX - rect.left;
+    
+    let percentage = clickX / rect.width;
+    percentage = Math.max(0, Math.min(1, percentage));
+
+    const maxScroll = scrollContainerRef.current.scrollWidth - containerWidth;
+    const newScrollLeft = percentage * maxScroll;
+
+    scrollContainerRef.current.scrollLeft = newScrollLeft;
+  };
+
+  const handleMiniMapDown = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault(); 
+    e.stopPropagation();
+    isDraggingMiniMap.current = true;
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    handleSeek(clientX);
+  };
+
+  // --- 3. MAIN TIMELINE DRAG LOGIC ---
+  const handleMainMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('.event-card')) return;
+    
+    e.preventDefault(); 
+    
+    isDraggingMain.current = true;
+    dragStartX.current = e.clientX;
+    if (scrollContainerRef.current) {
+      dragStartScroll.current = scrollContainerRef.current.scrollLeft;
+    }
+    
+    document.body.style.cursor = 'grabbing';
+  };
+
+  useEffect(() => {
+    const handleWindowMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+
+      if (isDraggingMiniMap.current) {
+        e.preventDefault(); 
+        handleSeek(clientX);
+      }
+
+      if (isDraggingMain.current && scrollContainerRef.current) {
+        e.preventDefault();
+        const delta = clientX - dragStartX.current;
+        scrollContainerRef.current.scrollLeft = dragStartScroll.current - delta;
+      }
+    };
+
+    const handleWindowUp = () => {
+      isDraggingMiniMap.current = false;
+      isDraggingMain.current = false;
+      document.body.style.cursor = ''; 
+    };
+
+    window.addEventListener('mousemove', handleWindowMove);
+    window.addEventListener('mouseup', handleWindowUp);
+    window.addEventListener('touchmove', handleWindowMove, { passive: false });
+    window.addEventListener('touchend', handleWindowUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMove);
+      window.removeEventListener('mouseup', handleWindowUp);
+      window.removeEventListener('touchmove', handleWindowMove);
+      window.removeEventListener('touchend', handleWindowUp);
+    };
+  }, [containerWidth, totalContentWidth]);
+
+
+  // --- 4. NAVIGATION HANDLERS ---
+  const handleZoom = (direction: 'in' | 'out' | 'reset') => {
+    setPixelsPerYear(prev => {
+      if (direction === 'reset') return minZoom; 
+      const factor = 1.25;
+      let newZoom = direction === 'in' ? prev * factor : prev / factor;
+      return Math.min(Math.max(newZoom, minZoom), maxZoom);
     });
-  }, [allEvents, searchQuery, selectedType, language]);
+  };
+
+  const jumpToYear = () => {
+    const year = parseInt(targetYear);
+    if (isNaN(year) || !scrollContainerRef.current) return;
+
+    const safeYear = Math.min(Math.max(year, DATA_START_YEAR), DATA_END_YEAR);
+    const pixelPos = (safeYear - DATA_START_YEAR) * pixelsPerYear;
+    const centerOffset = containerWidth / 2;
+    const scrollPos = Math.max(0, pixelPos - centerOffset);
+
+    scrollContainerRef.current.scrollTo({
+      left: scrollPos,
+      behavior: 'smooth'
+    });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      jumpToYear();
+    }
+  };
+
+  // --- 5. FILTER DATA ---
+  const filteredEvents = useMemo(() => {
+    const councils = COUNCILS || [];
+    const saints = SAINTS || [];
+    const popes = POPES || [];
+
+    const all = [
+      ...councils.map(e => ({ ...e, type: 'council' as const })),
+      ...saints.map(e => ({ ...e, type: 'saint' as const })),
+      ...popes.map(e => ({ ...e, type: 'pope' as const }))
+    ];
+    
+    return all.filter(event => {
+      if (selectedType !== 'all' && event.type !== selectedType) return false;
+      
+      const searchLower = searchQuery.toLowerCase();
+      const name = event.name?.[language]?.toLowerCase() || "";
+      const description = event.description?.[language]?.toLowerCase() || "";
+      const year = event.startYear?.toString() || "";
+      
+      return name.includes(searchLower) || description.includes(searchLower) || year.includes(searchLower);
+    }).sort((a, b) => a.startYear - b.startYear);
+  }, [selectedType, searchQuery, language]);
+
+  // --- 6. LAYOUT ENGINE ---
+  const { positionedEvents, totalLanes } = useMemo(() => {
+    const lanes: number[] = []; 
+    
+    const positioned = filteredEvents.map(event => {
+      const startPixel = (event.startYear - DATA_START_YEAR) * pixelsPerYear;
+      const duration = (event.endYear || event.startYear) - event.startYear;
+      const widthPixel = Math.max(duration * pixelsPerYear, 140); 
+      const endPixel = startPixel + widthPixel + 20;
+
+      let laneIndex = -1;
+
+      for (let i = 0; i < lanes.length; i++) {
+        if (lanes[i] < startPixel) {
+          laneIndex = i;
+          lanes[i] = endPixel; 
+          break;
+        }
+      }
+
+      if (laneIndex === -1) {
+        laneIndex = lanes.length;
+        lanes.push(endPixel);
+      }
+
+      return { 
+        ...event, 
+        lane: laneIndex,
+        x: startPixel,
+        width: widthPixel
+      };
+    });
+
+    return { positionedEvents: positioned, totalLanes: lanes.length };
+  }, [filteredEvents, pixelsPerYear]);
+
+  // --- 7. HELPER STYLES ---
+  const getColors = (type: string) => {
+    switch(type) {
+      case 'council': return { 
+        bg: 'bg-indigo-600', border: 'border-indigo-400', text: 'text-white', hover: 'hover:bg-indigo-500' 
+      };
+      case 'saint': return { 
+        bg: 'bg-amber-600', border: 'border-amber-400', text: 'text-white', hover: 'hover:bg-amber-500' 
+      };
+      case 'pope': return { 
+        bg: 'bg-red-600', border: 'border-red-400', text: 'text-white', hover: 'hover:bg-red-500' 
+      };
+      default: return { 
+        bg: 'bg-gray-700', border: 'border-gray-500', text: 'text-white', hover: 'hover:bg-gray-600' 
+      };
+    }
+  };
 
   const getIcon = (type: string) => {
-    switch (type) {
-      case 'council': return <ScrollText size={20} className="text-indigo-400" />;
-      case 'saint': return <User size={20} className="text-amber-400" />;
-      case 'pope': return <Crown size={20} className="text-red-400" />;
-      default: return <HistoryIcon size={20} className="text-gray-400" />;
+    switch(type) {
+      case 'council': return <ScrollText size={16} className="text-indigo-100" />;
+      case 'saint': return <User size={16} className="text-amber-100" />;
+      case 'pope': return <Crown size={16} className="text-red-100" />;
+      default: return <HistoryIcon size={16} />;
     }
   };
 
-  const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'council': return translations.timeline?.council?.[language] || "Council";
-      case 'saint': return translations.timeline?.saint?.[language] || "Saint";
-      case 'pope': return translations.timeline?.pope?.[language] || "Pope";
-      default: return type;
-    }
-  };
-
-  const getEventColor = (type: string) => {
-    switch (type) {
-      case 'council': return "border-indigo-500/50 bg-indigo-900/10 hover:bg-indigo-900/20";
-      case 'saint': return "border-amber-500/50 bg-amber-900/10 hover:bg-amber-900/20";
-      case 'pope': return "border-red-500/50 bg-red-900/10 hover:bg-red-900/20";
-      default: return "border-gray-700 bg-gray-800/50";
-    }
-  };
+  // --- 8. RENDER HELPERS ---
+  const containerStyleHeight = Math.max(totalLanes * (LANE_HEIGHT + EVENT_GAP) + 150, 500);
+  const tickInterval = pixelsPerYear < 2 ? 100 : pixelsPerYear < 5 ? 50 : pixelsPerYear < 10 ? 25 : 10;
+  const ticks = [];
+  for (let y = DATA_START_YEAR; y <= DATA_END_YEAR; y += tickInterval) {
+    ticks.push(y);
+  }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] pt-24 pb-12 px-4 relative overflow-hidden">
-      {/* Background Ambience */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-amber-900/10 rounded-full blur-[100px]" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-900/10 rounded-full blur-[100px]" />
+    <div className="w-full min-h-screen bg-[#050505] text-white pt-24 px-4 pb-12 flex flex-col gap-6">
+      
+      {/* SCROLLBAR STYLE */}
+      <style>{`
+        .timeline-scrollbar::-webkit-scrollbar { height: 14px; background: #0a0a0a; }
+        .timeline-scrollbar::-webkit-scrollbar-thumb { background-color: #3b82f6; border-radius: 7px; border: 3px solid #0a0a0a; }
+        .timeline-scrollbar::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 7px; }
+        .timeline-scrollbar { scrollbar-width: auto; scrollbar-color: #3b82f6 #1a1a1a; }
+      `}</style>
+
+      {/* 1. TITLE */}
+      <div className="container mx-auto text-center">
+        <h1 className="text-3xl md:text-4xl font-bold flex items-center justify-center gap-3">
+          <HistoryIcon className="text-blue-500" size={32} />
+          {TIMELINE_UI.title[language]}
+        </h1>
+        <p className="text-gray-400 mt-2 text-sm md:text-base">
+          {TIMELINE_UI.subtitle[language]}
+        </p>
       </div>
 
-      <div className="container mx-auto max-w-6xl relative z-10">
-        
-        {/* Header */}
-        <div className="text-center mb-12">
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex items-center justify-center gap-3 mb-4"
-          >
-            <HistoryIcon size={32} className="text-amber-500" />
-            <h1 className="text-4xl md:text-5xl font-bold text-white tracking-tight">
-              {translations.timeline?.title?.[language] || "Church Timeline"}
-            </h1>
-          </motion.div>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            {translations.timeline?.subtitle?.[language] || "A journey through 2000 years of Catholic history, saints, and councils."}
-          </p>
-        </div>
+      {/* 2. CONTROLS CONTAINER */}
+      <div className="container mx-auto w-full max-w-7xl bg-[#121212] border border-gray-800 p-4 rounded-xl shadow-lg">
+        <div className="flex flex-col lg:flex-row gap-4 justify-between items-center">
+          
+          {/* Filters */}
+          <div className="flex flex-wrap justify-center gap-2">
+             {(['all', 'council', 'saint', 'pope'] as const).map(type => (
+               <button
+                key={type}
+                onClick={() => setSelectedType(type)}
+                className={cn(
+                  "px-3 py-1.5 text-xs md:text-sm rounded-lg transition-all capitalize font-medium border",
+                  selectedType === type
+                    ? type === 'all' ? "bg-blue-600 border-blue-500 text-white shadow-lg" 
+                    : type === 'council' ? "bg-indigo-600 border-indigo-500 text-white shadow-lg"
+                    : type === 'saint' ? "bg-amber-600 border-amber-500 text-white shadow-lg"
+                    : "bg-red-600 border-red-500 text-white shadow-lg"
+                    : "bg-[#1a1a1a] border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800"
+                )}
+               >
+                 {TIMELINE_UI.filters[type][language]}
+               </button>
+             ))}
+          </div>
 
-        {/* Controls: Search & Filter */}
-        <div className="sticky top-20 z-30 bg-[#0a0a0a]/95 backdrop-blur-xl border border-gray-800 rounded-xl p-4 mb-8 shadow-2xl">
-          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+          {/* Navigation Tools */}
+          <div className="flex flex-col md:flex-row items-center gap-3 w-full lg:w-auto">
             
-            {/* Search */}
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+            <div className="flex items-center bg-[#0a0a0a] rounded-lg border border-gray-700 px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all w-full md:w-auto">
+              <CalendarArrowUp size={16} className="text-gray-500 shrink-0 mr-2" />
+              <input 
+                type="number" 
+                placeholder="Year" 
+                value={targetYear}
+                onChange={(e) => setTargetYear(e.target.value)}
+                onKeyDown={handleKeyDown}
+                className="bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 w-16"
+              />
+              <button 
+                onClick={jumpToYear}
+                className="bg-gray-800 hover:bg-gray-700 rounded p-1 text-white transition-colors ml-1"
+              >
+                <ArrowRight size={14} />
+              </button>
+            </div>
+
+            <div className="flex items-center bg-[#0a0a0a] rounded-lg border border-gray-700 px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all flex-1 min-w-[200px]">
+              <Search size={16} className="text-gray-500 shrink-0 mr-2" />
               <input 
                 type="text" 
-                placeholder={translations.timeline?.searchPlaceholder?.[language] || "Search events, years..."}
+                placeholder={TIMELINE_UI.searchPlaceholder[language]}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-10 pr-10 py-2.5 text-white placeholder-gray-500 focus:ring-2 focus:ring-amber-500/50 focus:border-amber-500 transition-all outline-none"
+                className="bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 w-full"
               />
               {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
-                >
-                  <X size={16} />
+                <button onClick={() => setSearchQuery('')} className="text-gray-500 hover:text-white transition-colors">
+                  <X size={14} />
                 </button>
               )}
             </div>
 
-            {/* Filter Buttons */}
-            <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 no-scrollbar">
-              <Filter size={18} className="text-gray-500 mr-2 shrink-0" />
-              {(['all', 'council', 'saint', 'pope'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setSelectedType(type)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all whitespace-nowrap border ${
-                    selectedType === type
-                      ? 'bg-amber-600 border-amber-500 text-white shadow-lg shadow-amber-900/20'
-                      : 'bg-gray-900 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white'
-                  }`}
-                >
-                  {type === 'all' 
-                    ? (translations.timeline?.filterAll?.[language] || "All") 
-                    : getTypeLabel(type)}
-                </button>
-              ))}
+            <div className="flex items-center gap-1 bg-[#0a0a0a] rounded-lg p-1 border border-gray-700 shrink-0">
+              <button onClick={() => handleZoom('out')} disabled={pixelsPerYear <= minZoom} className="p-2 hover:bg-gray-800 disabled:opacity-30 rounded text-gray-300 transition-colors"><ZoomOut size={18}/></button>
+              <button onClick={() => handleZoom('reset')} className="p-2 hover:bg-gray-800 rounded text-gray-300 transition-colors"><Maximize2 size={18}/></button>
+              <button onClick={() => handleZoom('in')} disabled={pixelsPerYear >= maxZoom} className="p-2 hover:bg-gray-800 disabled:opacity-30 rounded text-gray-300 transition-colors"><ZoomIn size={18}/></button>
             </div>
-          </div>
-        </div>
-
-        {/* Timeline Content */}
-        <div className="relative">
-          {/* Vertical Line */}
-          <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-px bg-gradient-to-b from-transparent via-gray-700 to-transparent" />
-
-          <div className="space-y-8">
-            {filteredEvents.length === 0 ? (
-              <div className="text-center py-20 text-gray-500">
-                No events found matching your search.
-              </div>
-            ) : (
-              filteredEvents.map((event, index) => (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.5, delay: index * 0.05 }}
-                  className={`relative flex items-center md:justify-between ${
-                    index % 2 === 0 ? 'md:flex-row-reverse' : ''
-                  }`}
-                >
-                  {/* Center Dot */}
-                  <div className="absolute left-4 md:left-1/2 w-4 h-4 bg-[#0a0a0a] border-2 border-amber-500 rounded-full -translate-x-1/2 z-20 shadow-[0_0_10px_rgba(245,158,11,0.5)]" />
-
-                  {/* Spacer for Desktop Alignment */}
-                  <div className="hidden md:block w-5/12" />
-
-                  {/* Card */}
-                  <div className="w-full md:w-5/12 pl-12 md:pl-0">
-                    <motion.div
-                      whileHover={{ scale: 1.02 }}
-                      className={`p-5 rounded-xl border cursor-pointer group relative overflow-hidden ${getEventColor(event.type)}`}
-                      onClick={() => setSelectedEvent(event)}
-                    >
-                      {/* Year Badge */}
-                      <div className="absolute top-4 right-4 text-2xl font-bold text-gray-500/20 group-hover:text-amber-500/20 transition-colors">
-                        {event.year}
-                      </div>
-
-                      <div className="flex items-center gap-3 mb-2">
-                        {getIcon(event.type)}
-                        <span className="text-xs uppercase tracking-wider font-bold text-gray-400">
-                          {getTypeLabel(event.type)}
-                        </span>
-                      </div>
-
-                      <h3 className="text-xl font-bold text-white mb-2 group-hover:text-amber-400 transition-colors">
-                        {event.name[language]}
-                      </h3>
-
-                      {event.description && (
-                        <p className="text-gray-400 text-sm line-clamp-2">
-                          {event.description[language]}
-                        </p>
-                      )}
-
-                      <div className="mt-3 flex items-center text-amber-500/50 text-xs font-medium group-hover:text-amber-500 transition-colors">
-                        <span>Read more</span>
-                        <ChevronRight size={14} className="ml-1" />
-                      </div>
-                    </motion.div>
-                  </div>
-                </motion.div>
-              ))
-            )}
           </div>
         </div>
       </div>
 
-      {/* Detail Modal */}
+      {/* 3. MINI-MAP (SCROLL BAR) */}
+      <div className="container mx-auto w-full max-w-[98%] lg:max-w-7xl select-none">
+        <div 
+          className="w-full h-8 bg-[#121212] rounded-lg border border-gray-700 relative overflow-hidden cursor-pointer touch-none hover:border-blue-500/50 transition-colors"
+          ref={miniMapRef}
+          onMouseDown={handleMiniMapDown}
+          onTouchStart={handleMiniMapDown}
+        >
+          <div className="absolute inset-0 flex items-center justify-between px-3 pointer-events-none z-0">
+             <span className="text-[10px] text-gray-500 font-mono font-bold">0 AD</span>
+             <span className="text-[10px] text-gray-500 font-mono font-bold">2100</span>
+          </div>
+
+          <div 
+            className="absolute top-0 bottom-0 bg-blue-600 border-x border-white/20 z-10 cursor-grab active:cursor-grabbing hover:bg-blue-500 transition-colors rounded-sm shadow-lg"
+            style={{
+              left: `${thumbLeftPercent}%`,
+              width: `${thumbWidthPercent}%`
+            }}
+          />
+        </div>
+      </div>
+
+      {/* 4. TIMELINE CONTAINER */}
+      <div className="container mx-auto w-full max-w-[98%] lg:max-w-7xl flex-1 flex flex-col min-h-[60vh]">
+        <div className="relative w-full h-full flex-1 border border-gray-700 rounded-xl bg-[#080808] shadow-2xl overflow-hidden flex flex-col select-none">
+          
+          <div 
+            className="flex-1 w-full overflow-x-auto overflow-y-hidden relative timeline-scrollbar cursor-grab active:cursor-grabbing"
+            ref={scrollContainerRef}
+            onScroll={handleMainScroll}
+            onMouseDown={handleMainMouseDown} 
+            style={{ scrollBehavior: 'auto' }} 
+          >
+            <div 
+              className="relative"
+              style={{ width: `${totalContentWidth}px`, height: '100%', minHeight: `${containerStyleHeight}px` }}
+            >
+              {/* Grid Background */}
+              <div className="absolute inset-0 pointer-events-none opacity-20" 
+                   style={{ 
+                     backgroundImage: `linear-gradient(to right, #333 1px, transparent 1px)`, 
+                     backgroundSize: `${100 * pixelsPerYear}px 100%` 
+                   }} 
+              />
+
+              {/* Sticky Axis */}
+              <div className="sticky top-0 left-0 right-0 h-12 border-b border-gray-800 bg-[#0a0a0a]/95 backdrop-blur-md z-30 flex items-end shadow-md pointer-events-none">
+                 {ticks.map(year => (
+                   <div 
+                     key={year} 
+                     className="absolute bottom-0 flex flex-col items-center"
+                     style={{ left: `${(year - DATA_START_YEAR) * pixelsPerYear}px` }}
+                   >
+                     <div className="h-3 w-px bg-gray-500" />
+                     <span className="text-xs text-gray-400 font-mono mb-1 transform -translate-x-1/2">
+                       {year}
+                     </span>
+                   </div>
+                 ))}
+              </div>
+
+              {/* Horizon Line */}
+              <div className="sticky top-12 left-0 right-0 h-0.5 bg-blue-600/50 shadow-[0_0_10px_rgba(37,99,235,0.5)] z-20 pointer-events-none" />
+
+              {/* Events */}
+              <div className="absolute top-16 left-0 right-0 bottom-4">
+                {positionedEvents.length === 0 && (
+                    <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-gray-500 text-lg">
+                        No events found matching your filter.
+                    </div>
+                )}
+
+                {positionedEvents.map((event) => {
+                    const colors = getColors(event.type);
+                    return (
+                        <motion.div
+                            key={event.id}
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            whileHover={{ scale: 1.02, zIndex: 50 }}
+                            onClick={() => setSelectedEvent(event)}
+                            className={cn(
+                                "absolute rounded-lg border flex flex-col justify-center px-4 cursor-pointer shadow-lg overflow-hidden transition-all z-10 event-card",
+                                colors.bg,
+                                colors.border,
+                                colors.hover
+                            )}
+                            style={{
+                                left: `${event.x}px`,
+                                width: `${event.width}px`,
+                                top: `${event.lane * (LANE_HEIGHT + EVENT_GAP)}px`,
+                                height: `${LANE_HEIGHT}px`
+                            }}
+                        >
+                            <div className="flex items-start gap-3 h-full pt-3">
+                                <span className="shrink-0 mt-0.5">{getIcon(event.type)}</span>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-sm font-bold text-white shadow-black drop-shadow-md leading-tight whitespace-normal line-clamp-2">
+                                        {event.name[language]}
+                                    </span>
+                                    <span className="text-[10px] truncate text-white/80 mt-1">
+                                        {event.startYear} {event.endYear && event.endYear !== event.startYear ? `- ${event.endYear}` : ''}
+                                    </span>
+                                </div>
+                            </div>
+                            <div className="absolute bottom-0 left-0 h-1.5 w-full bg-black/20" />
+                        </motion.div>
+                    );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* DETAIL MODAL - UPDATED SIZE & CLOSE BUTTON */}
       <AnimatePresence>
         {selectedEvent && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
             onClick={() => setSelectedEvent(null)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              initial={{ y: 50, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 50, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-gray-900 border border-gray-700 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto shadow-2xl relative"
+              className="bg-[#111] border border-gray-700 rounded-2xl w-[90%] max-w-md shadow-2xl overflow-hidden relative"
             >
-              {/* Header Image or Gradient */}
-              <div className="h-32 bg-gradient-to-r from-amber-900/40 to-blue-900/40 relative">
-                <button
-                  onClick={() => setSelectedEvent(null)}
-                  className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full text-white transition-colors"
+              <div className={cn("h-32 relative flex items-end p-6 border-b", getColors(selectedEvent.type).bg, getColors(selectedEvent.type).border)}>
+                <button 
+                  onClick={() => setSelectedEvent(null)} 
+                  className="absolute top-4 right-4 bg-black/40 hover:bg-black/70 rounded-full p-2 text-white transition-colors z-50"
                 >
                   <X size={20} />
                 </button>
-                <div className="absolute bottom-4 left-6">
-                  <span className="px-3 py-1 bg-black/60 rounded-full text-amber-400 text-sm font-bold border border-amber-500/30">
-                    {selectedEvent.year} AD
-                  </span>
+                <div className="relative z-10 w-full">
+                  <div className="text-xs uppercase tracking-widest font-bold mb-2 flex items-center gap-2 text-white/90">
+                    {getIcon(selectedEvent.type)} {selectedEvent.type}
+                  </div>
+                  <h2 className="text-3xl font-bold text-white leading-none">{selectedEvent.name[language]}</h2>
                 </div>
               </div>
-
-              <div className="p-6 sm:p-8">
-                <div className="flex items-center gap-3 mb-4">
-                  {getIcon(selectedEvent.type)}
-                  <span className="text-sm text-gray-400 uppercase tracking-widest font-semibold">
-                    {getTypeLabel(selectedEvent.type)}
-                  </span>
+              
+              <div className="p-8">
+                <div className="flex items-center gap-3 mb-6 text-gray-400 font-mono text-sm border-b border-gray-800 pb-4">
+                    <span className="text-white">Duration:</span>
+                    {selectedEvent.startYear} 
+                    {selectedEvent.endYear && selectedEvent.endYear !== selectedEvent.startYear ? ` - ${selectedEvent.endYear}` : ''} AD
                 </div>
 
-                <h2 className="text-3xl font-bold text-white mb-6">
-                  {selectedEvent.name[language]}
-                </h2>
-
-                <div className="prose prose-invert max-w-none">
-                  <p className="text-lg text-gray-300 leading-relaxed">
-                    {selectedEvent.description ? selectedEvent.description[language] : "No description available."}
-                  </p>
-                  
-                  {selectedEvent.details && (
-                    <div className="mt-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
-                      <h4 className="text-sm font-bold text-gray-400 uppercase mb-2">Key Details</h4>
-                      <p className="text-gray-300 text-sm">
-                        {selectedEvent.details[language]}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                <p className="text-gray-300 text-lg leading-relaxed mb-6">
+                  {selectedEvent.description[language]}
+                </p>
+                
+                {selectedEvent.details && (
+                  <div className="bg-[#0a0a0a] rounded-xl p-5 border border-gray-800 text-sm text-gray-400 leading-relaxed">
+                    {selectedEvent.details[language]}
+                  </div>
+                )}
               </div>
             </motion.div>
           </motion.div>
