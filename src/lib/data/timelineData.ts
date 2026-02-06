@@ -1,5 +1,3 @@
-// src/lib/data/timelineData.ts
-
 export interface LocalizedString {
   en: string;
   fr: string;
@@ -8,16 +6,16 @@ export interface LocalizedString {
 }
 
 export interface TimelineEvent {
-  id: string;
+  id: string; // Unique ID for keying
   startYear: number;
-  endYear?: number;
+  endYear?: number; // Optional: If missing, it's a "point" event
   name: LocalizedString;
   description: LocalizedString;
   details?: LocalizedString;
   type: 'council' | 'saint' | 'pope';
 }
 
-// --- UI TRANSLATIONS (NEW) ---
+// --- UI TRANSLATIONS ---
 export const TIMELINE_UI = {
   title: {
     en: "Church Timeline",
@@ -70,7 +68,7 @@ export const COUNCILS: TimelineEvent[] = [
   { id: 'c21', startYear: 1962, endYear: 1965, type: 'council', name: { en: "Second Vatican Council", fr: "Vatican II", es: "Vaticano II", de: "Vaticanum II" }, description: { en: "Modern world, Liturgy.", fr: "Monde moderne, Liturgie.", es: "Mundo moderno, Liturgia.", de: "Moderne Welt, Liturgie." } }
 ];
 
-// --- 2. SAINTS ---
+// --- 2. SAINTS (Updated with lifespan dates) ---
 export const SAINTS: TimelineEvent[] = [
   { id: 's1', startYear: 5, endYear: 67, type: 'saint', name: { en: "St. Paul", fr: "Saint Paul", es: "San Pablo", de: "Hl. Paulus" }, description: { en: "Apostle to the Gentiles.", fr: "Apôtre des Gentils.", es: "Apóstol de los gentiles.", de: "Apostel der Heiden." } },
   { id: 's2', startYear: 354, endYear: 430, type: 'saint', name: { en: "St. Augustine", fr: "Saint Augustin", es: "San Agustín", de: "Hl. Augustinus" }, description: { en: "Doctor of Grace.", fr: "Docteur de la Grâce.", es: "Doctor de la Gracia.", de: "Lehrer der Gnade." } },
@@ -80,7 +78,7 @@ export const SAINTS: TimelineEvent[] = [
   { id: 's6', startYear: 1887, endYear: 1968, type: 'saint', name: { en: "St. Padre Pio", fr: "Padre Pio", es: "Padre Pío", de: "Pater Pio" }, description: { en: "Stigmatist.", fr: "Stigmatisé.", es: "Estigmatizado.", de: "Stigmatisierter." } }
 ];
 
-// --- 3. POPES ---
+// --- 3. POPES (Reign dates) ---
 export const POPES: TimelineEvent[] = [
   { id: 'p1', startYear: 30, endYear: 64, type: 'pope', name: { en: "St. Peter", fr: "Saint Pierre", es: "San Pedro", de: "Hl. Petrus" }, description: { en: "First Pope.", fr: "Premier Pape.", es: "Primer Papa.", de: "Erster Papst." } },
   { id: 'p2', startYear: 440, endYear: 461, type: 'pope', name: { en: "Leo the Great", fr: "Léon le Grand", es: "León Magno", de: "Leo der Große" }, description: { en: "Defied Attila.", fr: "Défia Attila.", es: "Desafió a Atila.", de: "Trotzte Attila." } },

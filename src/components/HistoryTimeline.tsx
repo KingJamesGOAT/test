@@ -108,6 +108,7 @@ export default function HistoryTimeline() {
 
   // --- 3. MAIN TIMELINE DRAG LOGIC ---
   const handleMainMouseDown = (e: React.MouseEvent) => {
+    // If clicking a card, don't start scroll drag
     if ((e.target as HTMLElement).closest('.event-card')) return;
     
     e.preventDefault(); 
@@ -217,6 +218,9 @@ export default function HistoryTimeline() {
     const lanes: number[] = []; 
     
     const positioned = filteredEvents.map(event => {
+      // Ensure startYear exists
+      if (event.startYear === undefined) return null;
+
       const startPixel = (event.startYear - DATA_START_YEAR) * pixelsPerYear;
       const duration = (event.endYear || event.startYear) - event.startYear;
       const widthPixel = Math.max(duration * pixelsPerYear, 140); 
@@ -243,7 +247,7 @@ export default function HistoryTimeline() {
         x: startPixel,
         width: widthPixel
       };
-    });
+    }).filter(e => e !== null);
 
     return { positionedEvents: positioned, totalLanes: lanes.length };
   }, [filteredEvents, pixelsPerYear]);
@@ -404,15 +408,19 @@ export default function HistoryTimeline() {
         <div className="relative w-full h-full flex-1 border border-gray-700 rounded-xl bg-[#080808] shadow-2xl overflow-hidden flex flex-col select-none">
           
           <div 
-            className="flex-1 w-full overflow-x-auto overflow-y-hidden relative timeline-scrollbar cursor-grab active:cursor-grabbing"
+            className="flex-1 w-full overflow-x-auto overflow-y-hidden relative timeline-scrollbar"
             ref={scrollContainerRef}
             onScroll={handleMainScroll}
-            onMouseDown={handleMainMouseDown} 
             style={{ scrollBehavior: 'auto' }} 
           >
+            {/* CRITICAL FIX: 
+               onMouseDown is applied HERE (inner div), not on the scroll container.
+               This allows the scrollbar (on parent) to be clicked without being blocked by preventDefault().
+            */}
             <div 
-              className="relative"
+              className="relative cursor-grab active:cursor-grabbing"
               style={{ width: `${totalContentWidth}px`, height: '100%', minHeight: `${containerStyleHeight}px` }}
+              onMouseDown={handleMainMouseDown}
             >
               {/* Grid Background */}
               <div className="absolute inset-0 pointer-events-none opacity-20" 
@@ -457,7 +465,7 @@ export default function HistoryTimeline() {
                             initial={{ opacity: 0, scale: 0.9 }}
                             animate={{ opacity: 1, scale: 1 }}
                             whileHover={{ scale: 1.02, zIndex: 50 }}
-                            onClick={() => setSelectedEvent(event)}
+                            onClick={() => setSelectedEvent(event as TimelineEvent)}
                             className={cn(
                                 "absolute rounded-lg border flex flex-col justify-center px-4 cursor-pointer shadow-lg overflow-hidden transition-all z-10 event-card",
                                 colors.bg,
