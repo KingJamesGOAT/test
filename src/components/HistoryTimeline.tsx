@@ -12,7 +12,9 @@ import {
   Maximize2,
   CalendarArrowUp,
   ArrowRight,
-  BookOpen 
+  BookOpen,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useLanguage } from '../lib/i18n/LanguageContext';
 
@@ -41,11 +43,7 @@ export default function HistoryTimeline() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const miniMapRef = useRef<HTMLDivElement>(null);
   
-  // DRAG STATE (POINTER EVENTS)
-  const isDraggingMain = useRef(false);
-  const startXMain = useRef(0);
-  const startScrollMain = useRef(0);
-
+  // Only keep dragging for MiniMap
   const isDraggingMiniMap = useRef(false);
 
   // --- 1. ZOOM LIMITS ---
@@ -92,39 +90,7 @@ export default function HistoryTimeline() {
     scrollContainerRef.current.scrollLeft = newScrollLeft;
   };
 
-  // --- 3. POINTER EVENT HANDLERS ---
-  
-  const handleMainPointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest('.event-card')) return;
-
-    e.preventDefault();
-    const container = scrollContainerRef.current;
-    if (!container) return;
-
-    isDraggingMain.current = true;
-    startXMain.current = e.clientX;
-    startScrollMain.current = container.scrollLeft;
-    
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    document.body.style.cursor = 'grabbing';
-  };
-
-  const handleMainPointerMove = (e: React.PointerEvent) => {
-    if (!isDraggingMain.current || !scrollContainerRef.current) return;
-    
-    e.preventDefault();
-    const delta = e.clientX - startXMain.current;
-    scrollContainerRef.current.scrollLeft = startScrollMain.current - delta;
-  };
-
-  const handleMainPointerUp = (e: React.PointerEvent) => {
-    if (isDraggingMain.current) {
-      isDraggingMain.current = false;
-      document.body.style.cursor = '';
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    }
-  };
-
+  // --- 3. POINTER EVENT HANDLERS (MiniMap Only) ---
   const handleMiniMapPointerDown = (e: React.PointerEvent) => {
     e.preventDefault();
     isDraggingMiniMap.current = true;
@@ -150,8 +116,21 @@ export default function HistoryTimeline() {
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
-
   // --- 4. NAVIGATION HANDLERS ---
+  
+  // NEW: Navigate Left/Right by one screen width
+  const handleNavigate = (direction: 'left' | 'right') => {
+    if (!scrollContainerRef.current) return;
+    const container = scrollContainerRef.current;
+    const scrollAmount = container.clientWidth; // The exact width of the current view
+    const currentScroll = container.scrollLeft;
+    
+    container.scrollTo({
+      left: direction === 'right' ? currentScroll + scrollAmount : currentScroll - scrollAmount,
+      behavior: 'smooth'
+    });
+  };
+
   const handleZoom = (direction: 'in' | 'out' | 'reset') => {
     setPixelsPerYear(prev => {
       if (direction === 'reset') return minZoom; 
@@ -187,13 +166,13 @@ export default function HistoryTimeline() {
     const councils = COUNCILS || [];
     const saints = SAINTS || [];
     const popes = POPES || [];
-    const writings = WRITINGS || []; 
+    const writings = WRITINGS || [];
 
     const all = [
       ...councils.map(e => ({ ...e, type: 'council' as const })),
       ...saints.map(e => ({ ...e, type: 'saint' as const })),
       ...popes.map(e => ({ ...e, type: 'pope' as const })),
-      ...writings.map(e => ({ ...e, type: 'writing' as const })) 
+      ...writings.map(e => ({ ...e, type: 'writing' as const }))
     ];
     
     return all.filter(event => {
@@ -258,7 +237,6 @@ export default function HistoryTimeline() {
       case 'pope': return { 
         bg: 'bg-red-600', border: 'border-red-400', text: 'text-white', hover: 'hover:bg-red-500' 
       };
-      // CHANGED: "emerald" -> "green"
       case 'writing': return { 
         bg: 'bg-green-600', border: 'border-green-400', text: 'text-white', hover: 'hover:bg-green-500' 
       };
@@ -273,7 +251,6 @@ export default function HistoryTimeline() {
       case 'council': return <ScrollText size={16} className="text-indigo-100" />;
       case 'saint': return <User size={16} className="text-amber-100" />;
       case 'pope': return <Crown size={16} className="text-red-100" />;
-      // CHANGED: "text-emerald-100" -> "text-green-100"
       case 'writing': return <BookOpen size={16} className="text-green-100" />;
       default: return <HistoryIcon size={16} />;
     }
@@ -325,8 +302,7 @@ export default function HistoryTimeline() {
                     : type === 'council' ? "bg-indigo-600 border-indigo-500 text-white shadow-lg"
                     : type === 'saint' ? "bg-amber-600 border-amber-500 text-white shadow-lg"
                     : type === 'pope' ? "bg-red-600 border-red-500 text-white shadow-lg"
-                    // CHANGED: "emerald" -> "green"
-                    : "bg-green-600 border-green-500 text-white shadow-lg"
+                    : "bg-green-600 border-green-500 text-white shadow-lg" 
                     : "bg-[#1a1a1a] border-gray-700 text-gray-400 hover:text-white hover:bg-gray-800"
                 )}
                >
@@ -338,22 +314,40 @@ export default function HistoryTimeline() {
           {/* Nav Tools */}
           <div className="flex flex-col md:flex-row items-center gap-3 w-full lg:w-auto">
             
-            {/* Go to Year */}
-            <div className="flex items-center bg-[#0a0a0a] rounded-lg border border-gray-700 px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all w-full md:w-auto">
-              <CalendarArrowUp size={16} className="text-gray-500 shrink-0 mr-2" />
-              <input 
-                type="number" 
-                placeholder="Year" 
-                value={targetYear}
-                onChange={(e) => setTargetYear(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 w-16"
-              />
+            {/* Year & Nav Buttons */}
+            <div className="flex items-center gap-2">
               <button 
-                onClick={jumpToYear}
-                className="bg-gray-800 hover:bg-gray-700 rounded p-1 text-white transition-colors ml-1"
+                onClick={() => handleNavigate('left')}
+                className="bg-[#0a0a0a] border border-gray-700 hover:bg-gray-800 rounded-lg p-2 text-gray-300 transition-colors"
+                title="Previous Time Span"
               >
-                <ArrowRight size={14} />
+                <ChevronLeft size={16} />
+              </button>
+
+              <div className="flex items-center bg-[#0a0a0a] rounded-lg border border-gray-700 px-3 py-1.5 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 transition-all">
+                <CalendarArrowUp size={16} className="text-gray-500 shrink-0 mr-2" />
+                <input 
+                  type="number" 
+                  placeholder="Year" 
+                  value={targetYear}
+                  onChange={(e) => setTargetYear(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  className="bg-transparent border-none outline-none text-sm text-white placeholder-gray-600 w-16"
+                />
+                <button 
+                  onClick={jumpToYear}
+                  className="bg-gray-800 hover:bg-gray-700 rounded p-1 text-white transition-colors ml-1"
+                >
+                  <ArrowRight size={14} />
+                </button>
+              </div>
+
+              <button 
+                onClick={() => handleNavigate('right')}
+                className="bg-[#0a0a0a] border border-gray-700 hover:bg-gray-800 rounded-lg p-2 text-gray-300 transition-colors"
+                title="Next Time Span"
+              >
+                <ChevronRight size={16} />
               </button>
             </div>
 
@@ -411,10 +405,11 @@ export default function HistoryTimeline() {
 
       {/* 4. TIMELINE CONTAINER */}
       <div className="container mx-auto w-full max-w-[98%] lg:max-w-7xl flex-1 flex flex-col min-h-[60vh]">
+        {/* Changed overflow-y-hidden to overflow-y-auto so vertical scroll works if needed */}
         <div className="relative w-full h-full flex-1 border border-gray-700 rounded-xl bg-[#080808] shadow-2xl overflow-hidden flex flex-col select-none">
           
           <div 
-            className="flex-1 w-full overflow-x-auto overflow-y-hidden relative timeline-scrollbar cursor-grab active:cursor-grabbing"
+            className="flex-1 w-full overflow-x-auto overflow-y-auto relative timeline-scrollbar"
             ref={scrollContainerRef}
             onScroll={handleMainScroll}
             style={{ 
@@ -425,10 +420,6 @@ export default function HistoryTimeline() {
             <div 
               className="relative"
               style={{ width: `${totalContentWidth}px`, height: '100%', minHeight: `${containerStyleHeight}px` }}
-              onPointerDown={handleMainPointerDown}
-              onPointerMove={handleMainPointerMove}
-              onPointerUp={handleMainPointerUp}
-              onPointerLeave={handleMainPointerUp}
             >
               {/* Grid Background */}
               <div className="absolute inset-0 pointer-events-none opacity-20" 
